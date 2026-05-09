@@ -1,0 +1,44 @@
+{
+  "cliente_id": "contabilidade-xyz",
+  "escritorio": {
+    "nome": "Contabilidade XYZ",
+    "cnpj": "12.345.678/0001-99",
+    "contador_nome": "Dr. Carlos Mendes",
+    "contador_whatsapp": "5511999988887"
+  },
+  "uazapi": {
+    "base_url": "https://spark.uazapi.com",
+    "token": "SEU_TOKEN_AQUI",
+    "instance": "contabilidade-xyz"
+  },
+  "google": {
+    "drive_root_folder_id": "1abc123_ID_DA_PASTA_RAIZ",
+    "sheets_id": "1xyz456_ID_DA_PLANILHA",
+    "service_account_email": "contabot@projeto.iam.gserviceaccount.com"
+  },
+  "claude": {
+    "api_key": "sk-ant-CHAVE_AQUI",
+    "model_vision": "claude-sonnet-4-5",
+    "model_qa": "claude-haiku-4-5-20251001"
+  },
+  "comportamento": {
+    "horario_inicio": "08:00",
+    "horario_fim": "18:00",
+    "dias_uteis_apenas": true,
+    "intervalo_lembrete_dias": 3,
+    "max_tentativas_lembrete": 3,
+    "irpf_inicio": "2026-03-01",
+    "irpf_fim": "2026-05-31",
+    "assinatura": "\n\n_Contabilidade XYZ_"
+  },
+  "mensagens": {
+    "doc_recebido": "Documento recebido! Classificado como: *{{subtipo}}*\nReferente a: {{competencia}}\nValor: R$ {{valor}}\n\nSalvo com sucesso. Qualquer duvida, e so chamar!",
+    "doc_revisao": "Documento recebido, mas nao consegui identificar todos os dados com certeza. Salvo para revisao do {{contador_nome}}. Retorno em breve!",
+    "cliente_nao_cadastrado": "Oi! Sou o assistente do escritorio {{escritorio_nome}}. Nao encontrei seu cadastro em nosso sistema.\n\nPara atendimento, entre em contato com {{contador_nome}} pelo numero {{contador_whatsapp}}.",
+    "guia_envio": "Ola {{nome}}! Segue sua guia de pagamento:\nTipo: {{tipo}}\nCompetencia: {{competencia}}\nVencimento: {{vencimento}}\nValor: R$ {{valor}}\n\nQualquer duvida, fala comigo!",
+    "lembrete_1": "Ola {{nome}}! Lembrete: precisamos do {{descricao}} para regularizar sua situacao. Voce consegue enviar?",
+    "lembrete_2": "{{nome}}, o prazo para {{descricao}} esta se aproximando ({{prazo}}). Precisamos com urgencia!",
+    "lembrete_3": "{{nome}}, ultimo aviso sobre {{descricao}}. Entre em contato com {{contador_nome}} para evitar problemas.",
+    "cadastro_confirmado": "Cliente cadastrado com sucesso!\nNome: {{nome}}\nCPF/CNPJ: {{documento}}\nWhatsApp: {{whatsapp}}\nPasta Drive criada."
+  }
+}

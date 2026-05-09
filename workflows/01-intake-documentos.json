@@ -1,0 +1,486 @@
+{
+  "name": "ContaBot 01 — Intake de Documentos",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "contabot-intake",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-uazapi",
+      "name": "Webhook UazAPI",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond-image",
+              "leftValue": "={{ $json.data.type }}",
+              "rightValue": "image",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "cond-document",
+              "leftValue": "={{ $json.data.type }}",
+              "rightValue": "document",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "or"
+        }
+      },
+      "id": "filter-media",
+      "name": "Filtrar Midia",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2,
+      "position": [470, 300],
+      "notes": "Ignora mensagens de texto, audio, etc. So processa imagem e documento."
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "phone",
+              "name": "phone",
+              "value": "={{ $json.data.from.replace('@s.whatsapp.net', '') }}",
+              "type": "string"
+            },
+            {
+              "id": "media_url",
+              "name": "media_url",
+              "value": "={{ $json.data.media.url }}",
+              "type": "string"
+            },
+            {
+              "id": "media_type",
+              "name": "media_type",
+              "value": "={{ $json.data.media.mimetype }}",
+              "type": "string"
+            },
+            {
+              "id": "msg_id",
+              "name": "msg_id",
+              "value": "={{ $json.data.id }}",
+              "type": "string"
+            },
+            {
+              "id": "timestamp",
+              "name": "timestamp",
+              "value": "={{ new Date().toISOString() }}",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "set-vars",
+      "name": "Extrair Variaveis",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [690, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.media_url }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "id": "download-media",
+      "name": "Download Midia",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [910, 300],
+      "notes": "Baixa o arquivo de midia do UazAPI"
+    },
+    {
+      "parameters": {
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $env.CLAUDE_API_KEY }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-sonnet-4-5-20241022\",\n  \"max_tokens\": 1024,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": [\n        {\n          \"type\": \"image\",\n          \"source\": {\n            \"type\": \"base64\",\n            \"media_type\": \"{{ $('Extrair Variaveis').item.json.media_type }}\",\n            \"data\": \"{{ $binary.data.data }}\"\n          }\n        },\n        {\n          \"type\": \"text\",\n          \"text\": \"Voce e um assistente especializado em contabilidade brasileira. Analise o documento enviado e retorne um JSON estruturado.\\n\\nTIPOS DE DOCUMENTO (use exatamente estes valores):\\n- informe_rendimento\\n- nota_fiscal\\n- recibo_medico\\n- recibo_educacao\\n- extrato_bancario\\n- guia_tributo\\n- comprovante_pagamento\\n- contrato\\n- holerite\\n- certidao\\n- procuracao\\n- outro\\n\\nExtraia os dados com maxima precisao. Se um campo nao for identificavel, use null. Para valores monetarios, use formato brasileiro (1.234,56). Para datas, use DD/MM/AAAA.\\n\\nResponda APENAS com JSON valido:\\n{\\n  \\\"tipo\\\": \\\"string\\\",\\n  \\\"subtipo\\\": \\\"string\\\",\\n  \\\"confianca\\\": 0.0-1.0,\\n  \\\"dados\\\": {\\n    \\\"valor_principal\\\": \\\"string ou null\\\",\\n    \\\"data_documento\\\": \\\"string ou null\\\",\\n    \\\"competencia\\\": \\\"string ou null\\\",\\n    \\\"data_vencimento\\\": \\\"string ou null\\\",\\n    \\\"cnpj_cpf_emissor\\\": \\\"string ou null\\\",\\n    \\\"nome_emissor\\\": \\\"string ou null\\\",\\n    \\\"cnpj_cpf_destinatario\\\": \\\"string ou null\\\",\\n    \\\"nome_destinatario\\\": \\\"string ou null\\\",\\n    \\\"codigo_barras\\\": \\\"string ou null\\\",\\n    \\\"numero_documento\\\": \\\"string ou null\\\"\\n  },\\n  \\\"resumo\\\": \\\"string (1 linha PT-BR)\\\",\\n  \\\"requer_revisao\\\": true/false,\\n  \\\"motivo_revisao\\\": \\\"string ou null\\\"\\n}\"\n        }\n      ]\n    }\n  ]\n}",
+        "options": {}
+      },
+      "id": "claude-classificar",
+      "name": "Claude — Classificar Documento",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1130, 300],
+      "notes": "Envia imagem para Claude Vision e recebe classificacao JSON"
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst content = response.content[0].text;\n\n// Tenta parsear o JSON da resposta do Claude\nlet parsed;\ntry {\n  // Remove possivel markdown code block\n  const clean = content.replace(/```json\\n?/g, '').replace(/```\\n?/g, '').trim();\n  parsed = JSON.parse(clean);\n} catch (e) {\n  parsed = {\n    tipo: 'outro',\n    subtipo: 'Erro de classificacao',\n    confianca: 0,\n    dados: {},\n    resumo: 'Nao foi possivel classificar o documento',\n    requer_revisao: true,\n    motivo_revisao: 'Erro no parse do JSON: ' + e.message\n  };\n}\n\n// Pega variaveis do no anterior\nconst vars = $('Extrair Variaveis').first().json;\n\nreturn [{\n  json: {\n    ...parsed,\n    phone: vars.phone,\n    media_url: vars.media_url,\n    msg_id: vars.msg_id,\n    timestamp: vars.timestamp\n  }\n}];"
+      },
+      "id": "parse-json",
+      "name": "Parse Resposta Claude",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1350, 300]
+    },
+    {
+      "parameters": {
+        "operation": "lookup",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.CONTABOT_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "CLIENTES",
+          "mode": "name"
+        },
+        "lookupColumn": "D",
+        "lookupValue": "={{ $json.phone }}",
+        "options": {}
+      },
+      "id": "sheets-lookup-cliente",
+      "name": "Sheets — Buscar Cliente",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [1570, 300],
+      "notes": "Busca cliente pelo numero de WhatsApp na aba CLIENTES"
+    },
+    {
+      "parameters": {
+        "folderId": {
+          "__rl": true,
+          "value": "={{ $env.CONTABOT_DRIVE_FOLDER_ID }}",
+          "mode": "id"
+        },
+        "name": "={{ $json.tipo }}_{{ $json.dados.data_documento || 'sem-data' }}_{{ $json.msg_id.substring(0,8) }}",
+        "options": {}
+      },
+      "id": "drive-upload",
+      "name": "Drive — Upload Documento",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [1790, 300],
+      "notes": "Upload do arquivo para pasta do cliente no Google Drive. O folderId deve ser dinamico baseado no cliente encontrado."
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.CONTABOT_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "DOCUMENTOS",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "A": "=DOC-{{ Math.floor(Math.random() * 9999).toString().padStart(4, '0') }}",
+            "B": "={{ $('Parse Resposta Claude').item.json.timestamp }}",
+            "C": "={{ $('Sheets — Buscar Cliente').item.json.A }}",
+            "D": "={{ $('Sheets — Buscar Cliente').item.json.B }}",
+            "E": "={{ $('Parse Resposta Claude').item.json.tipo }}",
+            "F": "={{ $('Parse Resposta Claude').item.json.subtipo }}",
+            "G": "={{ $('Parse Resposta Claude').item.json.dados.valor_principal }}",
+            "H": "={{ $('Parse Resposta Claude').item.json.dados.competencia }}",
+            "I": "={{ $('Parse Resposta Claude').item.json.dados.cnpj_cpf_emissor }}",
+            "J": "={{ $json.webViewLink }}",
+            "K": "={{ Math.round($('Parse Resposta Claude').item.json.confianca * 100) }}%",
+            "L": "={{ $('Parse Resposta Claude').item.json.requer_revisao ? 'Revisar' : 'Processado' }}",
+            "M": "={{ $('Parse Resposta Claude').item.json.resumo }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "sheets-log-documento",
+      "name": "Sheets — Registrar Documento",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [2010, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "check-confianca",
+              "leftValue": "={{ $('Parse Resposta Claude').item.json.confianca }}",
+              "rightValue": 0.7,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            },
+            {
+              "id": "check-revisao",
+              "leftValue": "={{ $('Parse Resposta Claude').item.json.requer_revisao }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "check-confianca",
+      "name": "Confianca >= 70%?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2230, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.UAZAPI_BASE_URL }}/message/text",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "token",
+              "value": "={{ $env.UAZAPI_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"phone\": \"{{ $('Parse Resposta Claude').item.json.phone }}\",\n  \"message\": \"Documento recebido! \\nClassificado como: *{{ $('Parse Resposta Claude').item.json.subtipo }}*\\nReferente a: {{ $('Parse Resposta Claude').item.json.dados.competencia || 'nao identificado' }}\\nValor: R$ {{ $('Parse Resposta Claude').item.json.dados.valor_principal || 'nao identificado' }}\\n\\nSalvo com sucesso. Qualquer duvida, e so chamar!\"\n}",
+        "options": {}
+      },
+      "id": "wa-confirmacao-ok",
+      "name": "WA — Confirmacao OK",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2450, 200],
+      "notes": "Envia confirmacao de documento recebido e classificado com sucesso"
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.UAZAPI_BASE_URL }}/message/text",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "token",
+              "value": "={{ $env.UAZAPI_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"phone\": \"{{ $('Parse Resposta Claude').item.json.phone }}\",\n  \"message\": \"Documento recebido, mas nao consegui identificar todos os dados com certeza.\\nSalvo para revisao do contador. Retorno em breve!\"\n}",
+        "options": {}
+      },
+      "id": "wa-confirmacao-revisao",
+      "name": "WA — Aviso Revisao",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2450, 420],
+      "notes": "Avisa cliente que documento precisa de revisao manual"
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={\"status\": \"ok\"}",
+        "options": {}
+      },
+      "id": "response-ok",
+      "name": "Responder Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [2670, 300]
+    }
+  ],
+  "connections": {
+    "Webhook UazAPI": {
+      "main": [
+        [
+          {
+            "node": "Filtrar Midia",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filtrar Midia": {
+      "main": [
+        [
+          {
+            "node": "Extrair Variaveis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extrair Variaveis": {
+      "main": [
+        [
+          {
+            "node": "Download Midia",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Midia": {
+      "main": [
+        [
+          {
+            "node": "Claude — Classificar Documento",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude — Classificar Documento": {
+      "main": [
+        [
+          {
+            "node": "Parse Resposta Claude",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Resposta Claude": {
+      "main": [
+        [
+          {
+            "node": "Sheets — Buscar Cliente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sheets — Buscar Cliente": {
+      "main": [
+        [
+          {
+            "node": "Drive — Upload Documento",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Drive — Upload Documento": {
+      "main": [
+        [
+          {
+            "node": "Sheets — Registrar Documento",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sheets — Registrar Documento": {
+      "main": [
+        [
+          {
+            "node": "Confianca >= 70%?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Confianca >= 70%?": {
+      "main": [
+        [
+          {
+            "node": "WA — Confirmacao OK",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "WA — Aviso Revisao",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "WA — Confirmacao OK": {
+      "main": [
+        [
+          {
+            "node": "Responder Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "WA — Aviso Revisao": {
+      "main": [
+        [
+          {
+            "node": "Responder Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "ContaBot"
+    }
+  ]
+}

@@ -1,0 +1,124 @@
+{
+  "name": "ContaBot 04 — IRPF Checklist",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 1 3-5 *"
+            }
+          ]
+        }
+      },
+      "id": "cron-irpf",
+      "name": "Cron IRPF (1o dia Mar-Mai)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [250, 300],
+      "notes": "Dispara dia 1 de marco, abril e maio as 9h"
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.CONTABOT_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "CLIENTES",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "sheets-clientes",
+      "name": "Sheets — Ler Clientes",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [470, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "leftValue": "={{ $json.F }}",
+              "rightValue": "PF",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "leftValue": "={{ $json.G }}",
+              "rightValue": "Ativo",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "filter-pf-ativo",
+      "name": "Filtrar PF Ativos",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2,
+      "position": [690, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const mes = new Date().getMonth() + 1; // 3=mar, 4=abr, 5=mai\nconst items = $input.all();\nconst resultados = [];\n\nfor (const item of items) {\n  const nome = item.json.B;\n  let mensagem;\n  \n  if (mes === 3) {\n    mensagem = `Ola ${nome}! A temporada do *Imposto de Renda 2026* comecou!\\n\\nPara declararmos seu IR, precisamos dos seguintes documentos:\\n\\n*OBRIGATORIOS:*\\n- Informes de rendimento (todos os bancos)\\n- Informe de rendimento do empregador\\n- Comprovante de residencia atualizado\\n\\n*SE APLICAVEL:*\\n- Recibos medicos e odontologicos\\n- Comprovante de despesas com educacao\\n- Recibos de pensao alimenticia\\n- Documentos de imoveis (escritura, financiamento)\\n- Documentos de veiculos\\n- Notas de corretora (acoes, FIIs)\\n\\n*Prazo final: 31/05/2026*\\n\\nPode mandar tudo aqui mesmo no WhatsApp! Qualquer duvida, e so perguntar.`;\n  } else if (mes === 4) {\n    mensagem = `${nome}, lembrete: falta *1 mes* pro prazo final do IR 2026 (31/05).\\n\\nSe ainda nao enviou todos os documentos, manda pra gente o mais rapido possivel pra garantir que sua declaracao saia sem problemas.\\n\\nDocumentos que mais faltam nessa epoca:\\n- Informes de rendimento de bancos\\n- Recibos medicos\\n- Informe do empregador\\n\\nManda aqui no WhatsApp mesmo!`;\n  } else {\n    mensagem = `*URGENTE* — ${nome}, o prazo do IR 2026 encerra dia *31/05*!\\n\\nSe voce ainda tem documentos pendentes, envie HOJE para evitar multa da Receita Federal.\\n\\nA multa minima por atraso e de R$165,74, podendo chegar a 20% do imposto devido.\\n\\nEstamos aqui pra te ajudar. Manda o que falta!`;\n  }\n  \n  resultados.push({\n    json: {\n      ...item.json,\n      mensagem_irpf: mensagem\n    }\n  });\n}\n\nreturn resultados;"
+      },
+      "id": "code-montar-msg",
+      "name": "Montar Mensagem por Mes",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [910, 300],
+      "notes": "Marco: checklist completo. Abril: lembrete 1 mes. Maio: urgente."
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.UAZAPI_BASE_URL }}/message/text",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "token",
+              "value": "={{ $env.UAZAPI_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"phone\": \"{{ $json.D }}\",\n  \"message\": \"{{ $json.mensagem_irpf }}\"\n}",
+        "options": {}
+      },
+      "id": "wa-irpf",
+      "name": "WA — Enviar Checklist IRPF",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1130, 300]
+    }
+  ],
+  "connections": {
+    "Cron IRPF (1o dia Mar-Mai)": {
+      "main": [[{"node": "Sheets — Ler Clientes", "type": "main", "index": 0}]]
+    },
+    "Sheets — Ler Clientes": {
+      "main": [[{"node": "Filtrar PF Ativos", "type": "main", "index": 0}]]
+    },
+    "Filtrar PF Ativos": {
+      "main": [[{"node": "Montar Mensagem por Mes", "type": "main", "index": 0}]]
+    },
+    "Montar Mensagem por Mes": {
+      "main": [[{"node": "WA — Enviar Checklist IRPF", "type": "main", "index": 0}]]
+    }
+  },
+  "settings": {"executionOrder": "v1"},
+  "tags": [{"name": "ContaBot"}]
+}

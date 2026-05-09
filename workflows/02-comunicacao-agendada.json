@@ -1,0 +1,338 @@
+{
+  "name": "ContaBot 02 — Comunicacao Agendada",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 * * 1-5"
+            }
+          ]
+        }
+      },
+      "id": "cron-diario",
+      "name": "Cron Diario 9h",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [250, 300],
+      "notes": "Executa todo dia util as 9h (horario do servidor)"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "hoje",
+              "name": "hoje",
+              "value": "={{ new Date().toISOString().split('T')[0] }}",
+              "type": "string"
+            },
+            {
+              "id": "dia_do_mes",
+              "name": "dia_do_mes",
+              "value": "={{ new Date().getDate() }}",
+              "type": "number"
+            }
+          ]
+        }
+      },
+      "id": "set-data",
+      "name": "Data de Hoje",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [470, 300]
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.CONTABOT_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "GUIAS",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "sheets-read-guias",
+      "name": "Sheets — Ler Guias",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [690, 160],
+      "notes": "Le todas as guias da aba GUIAS"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "status-a-enviar",
+              "leftValue": "={{ $json.J }}",
+              "rightValue": "A Enviar",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "filter-guias-pendentes",
+      "name": "Filtrar Guias A Enviar",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2,
+      "position": [910, 160]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.UAZAPI_BASE_URL }}/message/document",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "token",
+              "value": "={{ $env.UAZAPI_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"phone\": \"{{ $json.phone_cliente }}\",\n  \"document\": \"{{ $json.I }}\",\n  \"filename\": \"Guia_{{ $json.D }}_{{ $json.E }}.pdf\",\n  \"caption\": \"Ola {{ $json.C }}! Segue sua guia de pagamento:\\nTipo: *{{ $json.D }}*\\nCompetencia: {{ $json.E }}\\nVencimento: *{{ $json.F }}*\\nValor: *R$ {{ $json.G }}*\\n\\nQualquer duvida, fala comigo!\"\n}",
+        "options": {}
+      },
+      "id": "wa-enviar-guia",
+      "name": "WA — Enviar Guia",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1130, 160],
+      "notes": "Envia PDF da guia + mensagem com detalhes via WhatsApp"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.CONTABOT_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "GUIAS",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "J": "Enviado",
+            "K": "={{ new Date().toISOString() }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "sheets-update-guia",
+      "name": "Sheets — Marcar Enviado",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [1350, 160]
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.CONTABOT_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "PENDENCIAS",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "sheets-read-pendencias",
+      "name": "Sheets — Ler Pendencias",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [690, 440],
+      "notes": "Le todas as pendencias da aba PENDENCIAS"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst hoje = new Date();\nconst resultados = [];\n\nfor (const item of items) {\n  const status = item.json.H;\n  if (status === 'Resolvido' || status === 'Cancelado') continue;\n  \n  const tentativas = parseInt(item.json.J) || 0;\n  const maxTentativas = 3;\n  if (tentativas >= maxTentativas) continue;\n  \n  // Checa se ja passou o intervalo desde ultimo contato\n  const ultimoContato = item.json.I ? new Date(item.json.I) : null;\n  const intervalo = 3; // dias\n  \n  if (ultimoContato) {\n    const diffDias = Math.floor((hoje - ultimoContato) / (1000 * 60 * 60 * 24));\n    if (diffDias < intervalo) continue;\n  }\n  \n  // Seleciona mensagem baseado no numero de tentativas\n  let mensagem;\n  const nome = item.json.C;\n  const descricao = item.json.F;\n  const prazo = item.json.G;\n  \n  if (tentativas === 0) {\n    mensagem = `Ola ${nome}! Lembrete: precisamos do ${descricao} para regularizar sua situacao. Voce consegue enviar?`;\n  } else if (tentativas === 1) {\n    mensagem = `${nome}, o prazo para ${descricao} esta se aproximando (${prazo}). Precisamos com urgencia!`;\n  } else {\n    mensagem = `${nome}, ultimo aviso sobre ${descricao}. Entre em contato com o contador para evitar problemas.`;\n  }\n  \n  resultados.push({\n    json: {\n      ...item.json,\n      mensagem_lembrete: mensagem,\n      nova_tentativa: tentativas + 1\n    }\n  });\n}\n\nreturn resultados;"
+      },
+      "id": "code-filtrar-pendencias",
+      "name": "Filtrar e Montar Lembretes",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [910, 440],
+      "notes": "Filtra pendencias que precisam de lembrete e monta mensagem escalonada"
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.UAZAPI_BASE_URL }}/message/text",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "token",
+              "value": "={{ $env.UAZAPI_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"phone\": \"{{ $json.D }}\",\n  \"message\": \"{{ $json.mensagem_lembrete }}\"\n}",
+        "options": {}
+      },
+      "id": "wa-lembrete",
+      "name": "WA — Enviar Lembrete",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1130, 440]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.CONTABOT_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "PENDENCIAS",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "H": "Em Cobranca",
+            "I": "={{ new Date().toISOString() }}",
+            "J": "={{ $json.nova_tentativa }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "sheets-update-pendencia",
+      "name": "Sheets — Atualizar Pendencia",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [1350, 440]
+    }
+  ],
+  "connections": {
+    "Cron Diario 9h": {
+      "main": [
+        [
+          {
+            "node": "Data de Hoje",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Data de Hoje": {
+      "main": [
+        [
+          {
+            "node": "Sheets — Ler Guias",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Sheets — Ler Pendencias",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sheets — Ler Guias": {
+      "main": [
+        [
+          {
+            "node": "Filtrar Guias A Enviar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filtrar Guias A Enviar": {
+      "main": [
+        [
+          {
+            "node": "WA — Enviar Guia",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "WA — Enviar Guia": {
+      "main": [
+        [
+          {
+            "node": "Sheets — Marcar Enviado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sheets — Ler Pendencias": {
+      "main": [
+        [
+          {
+            "node": "Filtrar e Montar Lembretes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filtrar e Montar Lembretes": {
+      "main": [
+        [
+          {
+            "node": "WA — Enviar Lembrete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "WA — Enviar Lembrete": {
+      "main": [
+        [
+          {
+            "node": "Sheets — Atualizar Pendencia",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": [
+    {
+      "name": "ContaBot"
+    }
+  ]
+}

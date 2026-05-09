@@ -1,0 +1,222 @@
+{
+  "name": "ContaBot 05 — Admin Cadastro",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "contabot-admin",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-admin",
+      "name": "Webhook UazAPI",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "leftValue": "={{ $json.data.body }}",
+              "rightValue": "NOVO_CLIENTE",
+              "operator": {
+                "type": "string",
+                "operation": "startsWith"
+              }
+            },
+            {
+              "leftValue": "={{ $json.data.from.replace('@s.whatsapp.net', '') }}",
+              "rightValue": "={{ $env.CONTADOR_WHATSAPP }}",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "filter-admin",
+      "name": "Mensagem do Contador + Prefixo",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2,
+      "position": [470, 300],
+      "notes": "So aceita mensagens do numero do contador com prefixo NOVO_CLIENTE"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json.data.body;\nconst lines = body.split('\\n');\nconst dados = {};\n\nfor (const line of lines) {\n  const parts = line.split(':').map(s => s.trim());\n  if (parts.length >= 2) {\n    const key = parts[0].toLowerCase();\n    const value = parts.slice(1).join(':').trim();\n    \n    if (key === 'nome') dados.nome = value;\n    if (key === 'cpf' || key === 'cnpj' || key === 'documento') dados.documento = value;\n    if (key === 'whatsapp' || key === 'telefone' || key === 'fone') dados.whatsapp = value.replace(/[^0-9]/g, '');\n    if (key === 'tipo') dados.tipo = value.toUpperCase();\n    if (key === 'email') dados.email = value;\n  }\n}\n\n// Validacoes basicas\nif (!dados.nome || !dados.documento || !dados.whatsapp) {\n  dados.erro = 'Dados incompletos. Formato:\\nNOVO_CLIENTE\\nNome: Joao Silva\\nCPF: 123.456.789-00\\nWhatsApp: 11999999999\\nTipo: PF';\n}\n\n// Gera ID\ndados.id = 'CLI-' + Math.floor(Math.random() * 9999).toString().padStart(4, '0');\ndados.tipo = dados.tipo || 'PF';\ndados.data_cadastro = new Date().toLocaleDateString('pt-BR');\n\nreturn [{ json: dados }];"
+      },
+      "id": "parse-cadastro",
+      "name": "Parse Dados do Cliente",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [690, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "leftValue": "={{ $json.erro }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "empty"
+              }
+            }
+          ]
+        }
+      },
+      "id": "check-valido",
+      "name": "Dados Validos?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [910, 300]
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "folderId": {
+          "__rl": true,
+          "value": "={{ $env.CONTABOT_DRIVE_FOLDER_ID }}",
+          "mode": "id"
+        },
+        "name": "={{ $json.documento }} — {{ $json.nome }}",
+        "options": {}
+      },
+      "id": "drive-criar-pasta",
+      "name": "Drive — Criar Pasta Cliente",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [1130, 200],
+      "notes": "Cria pasta raiz do cliente no Drive"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.CONTABOT_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "CLIENTES",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "A": "={{ $('Parse Dados do Cliente').item.json.id }}",
+            "B": "={{ $('Parse Dados do Cliente').item.json.nome }}",
+            "C": "={{ $('Parse Dados do Cliente').item.json.documento }}",
+            "D": "={{ $('Parse Dados do Cliente').item.json.whatsapp }}",
+            "E": "={{ $('Parse Dados do Cliente').item.json.email || '' }}",
+            "F": "={{ $('Parse Dados do Cliente').item.json.tipo }}",
+            "G": "Ativo",
+            "H": "={{ $json.webViewLink }}",
+            "I": "={{ $('Parse Dados do Cliente').item.json.data_cadastro }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "sheets-cadastrar",
+      "name": "Sheets — Cadastrar Cliente",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [1350, 200]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.UAZAPI_BASE_URL }}/message/text",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "token",
+              "value": "={{ $env.UAZAPI_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"phone\": \"{{ $env.CONTADOR_WHATSAPP }}\",\n  \"message\": \"Cliente cadastrado com sucesso!\\n\\nID: {{ $('Parse Dados do Cliente').item.json.id }}\\nNome: {{ $('Parse Dados do Cliente').item.json.nome }}\\nDocumento: {{ $('Parse Dados do Cliente').item.json.documento }}\\nWhatsApp: {{ $('Parse Dados do Cliente').item.json.whatsapp }}\\nTipo: {{ $('Parse Dados do Cliente').item.json.tipo }}\\nPasta Drive criada.\"\n}",
+        "options": {}
+      },
+      "id": "wa-confirmacao-cadastro",
+      "name": "WA — Confirmar Cadastro",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1570, 200]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.UAZAPI_BASE_URL }}/message/text",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "token",
+              "value": "={{ $env.UAZAPI_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"phone\": \"{{ $env.CONTADOR_WHATSAPP }}\",\n  \"message\": \"Erro no cadastro: {{ $json.erro }}\"\n}",
+        "options": {}
+      },
+      "id": "wa-erro-cadastro",
+      "name": "WA — Erro Cadastro",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1130, 420]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={\"status\": \"ok\"}",
+        "options": {}
+      },
+      "id": "response-admin",
+      "name": "Responder Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1790, 300]
+    }
+  ],
+  "connections": {
+    "Webhook UazAPI": {
+      "main": [[{"node": "Mensagem do Contador + Prefixo", "type": "main", "index": 0}]]
+    },
+    "Mensagem do Contador + Prefixo": {
+      "main": [[{"node": "Parse Dados do Cliente", "type": "main", "index": 0}]]
+    },
+    "Parse Dados do Cliente": {
+      "main": [[{"node": "Dados Validos?", "type": "main", "index": 0}]]
+    },
+    "Dados Validos?": {
+      "main": [
+        [{"node": "Drive — Criar Pasta Cliente", "type": "main", "index": 0}],
+        [{"node": "WA — Erro Cadastro", "type": "main", "index": 0}]
+      ]
+    },
+    "Drive — Criar Pasta Cliente": {
+      "main": [[{"node": "Sheets — Cadastrar Cliente", "type": "main", "index": 0}]]
+    },
+    "Sheets — Cadastrar Cliente": {
+      "main": [[{"node": "WA — Confirmar Cadastro", "type": "main", "index": 0}]]
+    },
+    "WA — Confirmar Cadastro": {
+      "main": [[{"node": "Responder Webhook", "type": "main", "index": 0}]]
+    },
+    "WA — Erro Cadastro": {
+      "main": [[{"node": "Responder Webhook", "type": "main", "index": 0}]]
+    }
+  },
+  "settings": {"executionOrder": "v1"},
+  "tags": [{"name": "ContaBot"}]
+}

@@ -1,0 +1,348 @@
+{
+  "name": "ContaBot 03 — Q&A Bot",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "contabot-qa",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-qa",
+      "name": "Webhook UazAPI",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "leftValue": "={{ $json.data.type }}",
+              "rightValue": "text",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ]
+        }
+      },
+      "id": "filter-texto",
+      "name": "Apenas Texto",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2,
+      "position": [470, 300]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "phone",
+              "name": "phone",
+              "value": "={{ $json.data.from.replace('@s.whatsapp.net', '') }}",
+              "type": "string"
+            },
+            {
+              "id": "mensagem",
+              "name": "mensagem",
+              "value": "={{ $json.data.body }}",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "set-vars-qa",
+      "name": "Extrair Dados",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [690, 300]
+    },
+    {
+      "parameters": {
+        "operation": "lookup",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.CONTABOT_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "CLIENTES",
+          "mode": "name"
+        },
+        "lookupColumn": "D",
+        "lookupValue": "={{ $json.phone }}",
+        "options": {}
+      },
+      "id": "sheets-buscar-cliente",
+      "name": "Sheets — Buscar Cliente",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [910, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "leftValue": "={{ $json.B }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ]
+        }
+      },
+      "id": "check-cadastrado",
+      "name": "Cliente Cadastrado?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1130, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.UAZAPI_BASE_URL }}/message/text",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "token",
+              "value": "={{ $env.UAZAPI_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"phone\": \"{{ $('Extrair Dados').item.json.phone }}\",\n  \"message\": \"Oi! Sou o assistente do escritorio. Nao encontrei seu cadastro em nosso sistema.\\n\\nPara atendimento, entre em contato com o contador ou aguarde, nosso time retornara em breve.\"\n}",
+        "options": {}
+      },
+      "id": "wa-nao-cadastrado",
+      "name": "WA — Nao Cadastrado",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1350, 460]
+    },
+    {
+      "parameters": {
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $env.CLAUDE_API_KEY }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-haiku-4-5-20251001\",\n  \"max_tokens\": 256,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"Analise a mensagem do cliente e decida se deve ser escalada para o contador humano.\\n\\nESCALE quando: calculo tributario especifico, reclamacao, urgencia fiscal, abertura/fechamento de empresa, valores acima de R$10.000, tom agressivo.\\n\\nNAO ESCALE quando: envio de documento, prazo geral, saudacao, duvida simples sobre IR, agradecimento.\\n\\nMensagem: {{ $('Extrair Dados').item.json.mensagem }}\\n\\nResponda APENAS com JSON:\\n{\\\"escalar\\\": true/false, \\\"confianca\\\": 0.0-1.0, \\\"motivo\\\": \\\"string ou null\\\", \\\"categoria\\\": \\\"string\\\"}\"\n    }\n  ]\n}",
+        "options": {}
+      },
+      "id": "claude-escalar",
+      "name": "Claude — Decidir Escalada",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1350, 180]
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst content = response.content[0].text;\nlet parsed;\ntry {\n  const clean = content.replace(/```json\\n?/g, '').replace(/```\\n?/g, '').trim();\n  parsed = JSON.parse(clean);\n} catch (e) {\n  parsed = { escalar: false, confianca: 0.5, motivo: null, categoria: 'geral' };\n}\nreturn [{ json: parsed }];"
+      },
+      "id": "parse-escalada",
+      "name": "Parse Escalada",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1570, 180]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "leftValue": "={{ $json.escalar }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ]
+        }
+      },
+      "id": "check-escalar",
+      "name": "Escalar?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1790, 180]
+    },
+    {
+      "parameters": {
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $env.CLAUDE_API_KEY }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-haiku-4-5-20251001\",\n  \"max_tokens\": 512,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"Voce e o assistente virtual de um escritorio de contabilidade. Responda a duvida do cliente de forma cordial, direta e em linguagem simples. Maximo 200 palavras. Use formatacao WhatsApp (*negrito*, _italico_).\\n\\nCliente: {{ $('Sheets — Buscar Cliente').item.json.B }} ({{ $('Sheets — Buscar Cliente').item.json.F }})\\n\\nPergunta: {{ $('Extrair Dados').item.json.mensagem }}\\n\\nResponda de forma natural em portugues brasileiro.\"\n    }\n  ]\n}",
+        "options": {}
+      },
+      "id": "claude-responder",
+      "name": "Claude — Responder Duvida",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2010, 100]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.UAZAPI_BASE_URL }}/message/text",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "token",
+              "value": "={{ $env.UAZAPI_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"phone\": \"{{ $('Extrair Dados').item.json.phone }}\",\n  \"message\": \"{{ $json.content[0].text }}\"\n}",
+        "options": {}
+      },
+      "id": "wa-resposta",
+      "name": "WA — Enviar Resposta",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2230, 100]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.UAZAPI_BASE_URL }}/message/text",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "token",
+              "value": "={{ $env.UAZAPI_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"phone\": \"{{ $('Extrair Dados').item.json.phone }}\",\n  \"message\": \"Boa pergunta! Essa questao precisa de uma analise mais detalhada. Vou encaminhar para o contador que vai te responder o mais rapido possivel.\"\n}",
+        "options": {}
+      },
+      "id": "wa-escalar-cliente",
+      "name": "WA — Aviso ao Cliente",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2010, 280]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.UAZAPI_BASE_URL }}/message/text",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "token",
+              "value": "={{ $env.UAZAPI_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"phone\": \"{{ $env.CONTADOR_WHATSAPP }}\",\n  \"message\": \"*ESCALADA — ContaBot*\\n\\nCliente: {{ $('Sheets — Buscar Cliente').item.json.B }}\\nTelefone: {{ $('Extrair Dados').item.json.phone }}\\nCategoria: {{ $('Parse Escalada').item.json.categoria }}\\n\\nMensagem original:\\n_{{ $('Extrair Dados').item.json.mensagem }}_\\n\\nMotivo da escalada: {{ $('Parse Escalada').item.json.motivo }}\"\n}",
+        "options": {}
+      },
+      "id": "wa-escalar-contador",
+      "name": "WA — Notificar Contador",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2230, 280]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={\"status\": \"ok\"}",
+        "options": {}
+      },
+      "id": "response-qa",
+      "name": "Responder Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [2450, 300]
+    }
+  ],
+  "connections": {
+    "Webhook UazAPI": {
+      "main": [[{"node": "Apenas Texto", "type": "main", "index": 0}]]
+    },
+    "Apenas Texto": {
+      "main": [[{"node": "Extrair Dados", "type": "main", "index": 0}]]
+    },
+    "Extrair Dados": {
+      "main": [[{"node": "Sheets — Buscar Cliente", "type": "main", "index": 0}]]
+    },
+    "Sheets — Buscar Cliente": {
+      "main": [[{"node": "Cliente Cadastrado?", "type": "main", "index": 0}]]
+    },
+    "Cliente Cadastrado?": {
+      "main": [
+        [{"node": "Claude — Decidir Escalada", "type": "main", "index": 0}],
+        [{"node": "WA — Nao Cadastrado", "type": "main", "index": 0}]
+      ]
+    },
+    "Claude — Decidir Escalada": {
+      "main": [[{"node": "Parse Escalada", "type": "main", "index": 0}]]
+    },
+    "Parse Escalada": {
+      "main": [[{"node": "Escalar?", "type": "main", "index": 0}]]
+    },
+    "Escalar?": {
+      "main": [
+        [{"node": "WA — Aviso ao Cliente", "type": "main", "index": 0}],
+        [{"node": "Claude — Responder Duvida", "type": "main", "index": 0}]
+      ]
+    },
+    "Claude — Responder Duvida": {
+      "main": [[{"node": "WA — Enviar Resposta", "type": "main", "index": 0}]]
+    },
+    "WA — Enviar Resposta": {
+      "main": [[{"node": "Responder Webhook", "type": "main", "index": 0}]]
+    },
+    "WA — Aviso ao Cliente": {
+      "main": [[{"node": "WA — Notificar Contador", "type": "main", "index": 0}]]
+    },
+    "WA — Notificar Contador": {
+      "main": [[{"node": "Responder Webhook", "type": "main", "index": 0}]]
+    },
+    "WA — Nao Cadastrado": {
+      "main": [[{"node": "Responder Webhook", "type": "main", "index": 0}]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": [{"name": "ContaBot"}]
+}
